@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -46,11 +47,13 @@
 
 class SignatureAndOffsetManager {
 public:
+    SignatureAndOffsetManager();
+
     void addSignature(unsigned int hash, const char* sig, const char* name);
     void removeSignature(unsigned int hash);
     [[nodiscard]] const char* getSig(unsigned int hash) const;
     [[nodiscard]] const char* getSigName(unsigned int hash) const;
-    [[nodiscard]] uintptr_t getSigAddress(unsigned int hash) const;
+    [[nodiscard]] uintptr_t getSigAddress(unsigned int hash);
 
     void addOffset(unsigned int hash, int offset);
     [[nodiscard]] int getOffset(unsigned int hash) const;
@@ -65,10 +68,13 @@ private:
         std::string signature;
         std::string name;
         uintptr_t address;
+        bool resolved;
     };
     std::vector<SignatureData> sigs{};
     std::unordered_map<unsigned int, std::size_t> sigIndices{};
     std::unordered_map<unsigned int, int> offsets{};
+    mutable std::mutex sigMutex{};
+    mutable std::mutex offsetMutex{};
 };
 
 extern SignatureAndOffsetManager Mgr;

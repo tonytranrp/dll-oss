@@ -1,10 +1,16 @@
 #pragma once
-#include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class VersionUtils {
-    public:
+public:
+    struct VersionEntry {
+        std::string_view version;
+        void (*loadSignatures)();
+        void (*loadOffsets)();
+    };
+
     static std::string getFormattedVersion();
 
     static void initialize();
@@ -15,5 +21,5 @@ class VersionUtils {
     static bool checkBelowOrEqual(int m, int b);
     static bool checkBetween(int m1, int b1, int m2, int b2);
 
-    static std::vector<std::pair<std::string, std::pair<std::function<void()>, std::function<void()>>>> versions;
+    static std::vector<VersionEntry> versions;
 };

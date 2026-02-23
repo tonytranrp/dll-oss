@@ -29,6 +29,5 @@ bool Hook::manualHook(void *hookAddr, void *callbackPtr, void **funcOriginal) {
         return false;
     }
 
-    Logger::custom(fg(fmt::color::deep_sky_blue), "Hook", "Hooked {}", this->name);
     return true;
 }

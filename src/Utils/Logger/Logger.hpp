@@ -22,6 +22,8 @@ namespace Logger {
     void initialize();
     void shutdown();
     void printColors();
+    bool isCategoryEnabled(const std::string& level);
+    void setCategoryEnabled(const std::string& level, bool enabled);
     
     // Helper function to format HRESULT errors
     inline std::string getHRESULTError(HRESULT hr) {
@@ -43,6 +45,10 @@ namespace Logger {
     }
 
     void print(const fmt::text_style& ts, const std::string& level, const std::string& fmt, auto&& ... args) {
+        if (!isCategoryEnabled(level)) {
+            return;
+        }
+
         try {
             auto message = fmt::format(fmt::runtime(fmt), args...);
 
@@ -54,7 +60,6 @@ namespace Logger {
             );
 
             fmt::print("{}\n", fullMessage);
-            fflush(stdout);
 
             writeToFile("[" + level + "] " + message);
         }
@@ -67,7 +72,6 @@ namespace Logger {
         try {
             auto message = fmt::format(fmt::runtime(fmt), args...);
             fmt::print("{}", message);
-            fflush(stdout);
 
             writeToFile(message);
         }
@@ -80,7 +84,6 @@ namespace Logger {
         try {
             auto message = fmt::format(fmt::runtime(fmt), args...);
             fmt::print("{}\n", message);
-            fflush(stdout);
 
             writeToFile(message);
         }

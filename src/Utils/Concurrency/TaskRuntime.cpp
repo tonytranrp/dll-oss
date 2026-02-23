@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <taskflow/taskflow.hpp>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -27,6 +28,10 @@ std::mutex gTaskMutex;
 std::unordered_map<TaskRuntime::TaskId, TaskRecord> gTasks;
 
 constexpr auto kCancelCheckSlice = 25ms;
+
+tf::Executor& getExecutor() {
+    return *gExecutor;
+}
 
 void cleanupFinishedLocked() {
     for (auto it = gTasks.begin(); it != gTasks.end();) {
@@ -66,9 +71,9 @@ void TaskRuntime::initialize(std::size_t workerCount) {
     });
 }
 
-tf::Executor& TaskRuntime::executor() {
+void TaskRuntime::submitVoid(std::function<void()> task) {
     initialize();
-    return *gExecutor;
+    getExecutor().async(std::move(task));
 }
 
 bool TaskRuntime::isStopping() {
@@ -93,7 +98,7 @@ TaskRuntime::TaskId TaskRuntime::scheduleDetached(std::function<void()> task, st
         }
     };
 
-    auto future = executor().async(std::move(wrapped));
+    auto future = getExecutor().async(std::move(wrapped));
     std::lock_guard<std::mutex> lock(gTaskMutex);
     cleanupFinishedLocked();
     const auto taskId = gNextTaskId.fetch_add(1, std::memory_order_relaxed);
@@ -134,7 +139,7 @@ TaskRuntime::TaskId TaskRuntime::schedulePeriodic(
         }
     };
 
-    auto future = executor().async(std::move(wrapped));
+    auto future = getExecutor().async(std::move(wrapped));
     std::lock_guard<std::mutex> lock(gTaskMutex);
     cleanupFinishedLocked();
     const auto taskId = gNextTaskId.fetch_add(1, std::memory_order_relaxed);
@@ -178,7 +183,7 @@ TaskRuntime::TaskId TaskRuntime::scheduleLoop(
         }
     };
 
-    auto future = executor().async(std::move(wrapped));
+    auto future = getExecutor().async(std::move(wrapped));
     std::lock_guard<std::mutex> lock(gTaskMutex);
     cleanupFinishedLocked();
     const auto taskId = gNextTaskId.fetch_add(1, std::memory_order_relaxed);
@@ -206,7 +211,7 @@ void TaskRuntime::cancelAll() {
 
 void TaskRuntime::waitForIdle() {
     initialize();
-    executor().wait_for_all();
+    getExecutor().wait_for_all();
 
     std::lock_guard<std::mutex> lock(gTaskMutex);
     cleanupFinishedLocked();
@@ -243,5 +248,5 @@ void TaskRuntime::shutdown(const std::chrono::milliseconds timeout) {
         }
     }
 
-    executor().wait_for_all();
+    getExecutor().wait_for_all();
 }

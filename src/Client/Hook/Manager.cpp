@@ -55,6 +55,7 @@
 #include "Hooks/Visual/Level_addParticleEffect.hpp"
 #include "Hooks/Visual/Level_sendServerLegacyParticle.hpp"
 #include "Hooks/Game/ActorDropItem.hpp"
+#include <Utils/Memory/Memory.hpp>
 
 std::vector<std::shared_ptr<Hook>> HookManager::hooks;
 
@@ -63,6 +64,8 @@ std::string dxVersion[5] = {"Couldn't initialize", "DX9", "DX10", "DX11", "DX12"
 void HookManager::initialize() {
     uint64_t start = Utils::getCurrentMs();
     MH_Initialize();
+    hooks.clear();
+    hooks.reserve(64);
 
     kiero::init(kiero::RenderType::D3D12);
 
@@ -153,12 +156,33 @@ void HookManager::initialize() {
     if(VersionUtils::checkAboveOrEqual(21, 50)) {
         addHook<ReadFileHook>();
     }
+
+    Memory::setQueueHookEnable(true);
+    const uint64_t queueStart = Utils::getCurrentMs();
     for (const auto& hook: hooks) {
         hook->enableHook();
     }
+    const float queueElapsed = (Utils::getCurrentMs() - queueStart) / 1000.0f;
+
+    const uint64_t applyStart = Utils::getCurrentMs();
+    const MH_STATUS applyStatus = MH_ApplyQueued();
+    const float applyElapsed = (Utils::getCurrentMs() - applyStart) / 1000.0f;
+    Memory::setQueueHookEnable(false);
+
+    if (applyStatus != MH_OK) {
+        Logger::custom(fg(fmt::color::crimson), "Hook", "MH_ApplyQueued failed ({})", static_cast<int>(applyStatus));
+    }
 
     float elapsed = (Utils::getCurrentMs() - start) / 1000.0;
-    Logger::custom(fg(fmt::color::deep_sky_blue), "Hook", "Initialized {} hooks in {:.2f}s", hooks.size(), elapsed);
+    Logger::custom(
+        fg(fmt::color::deep_sky_blue),
+        "Hook",
+        "Initialized {} hooks in {:.2f}s (queue {:.2f}s, apply {:.2f}s)",
+        hooks.size(),
+        elapsed,
+        queueElapsed,
+        applyElapsed
+    );
 }
 
 void HookManager::terminate() {

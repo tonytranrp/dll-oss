@@ -327,7 +327,6 @@ void Client::initialize() {
 
 	RegisterActivationHandler();
 	HookManager::initialize();
-	MH_ApplyQueued();
 
 
 

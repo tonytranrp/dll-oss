@@ -5,21 +5,62 @@
 #include "crashlogs.hpp"
 #include <filesystem>
 #include <fstream>
+#include <mutex>
+#include <unordered_map>
 
 
 namespace Logger {
+    namespace {
+        std::mutex gLogMutex;
+        std::ofstream gLogFile;
+        std::string gLogPath;
+        std::mutex gCategoryMutex;
+        std::unordered_map<std::string, bool> gCategoryEnabled;
+
+        void ensureLogFileOpenLocked() {
+            if (gLogFile.is_open()) {
+                return;
+            }
+
+            if (gLogPath.empty()) {
+                gLogPath = Utils::getClientPath() + "\\logs\\latest.log";
+            }
+
+            const std::filesystem::path logPath(gLogPath);
+            const auto parent = logPath.parent_path();
+            if (!parent.empty()) {
+                std::error_code ec;
+                std::filesystem::create_directories(parent, ec);
+            }
+
+            gLogFile.open(gLogPath, std::ios::out | std::ios::app);
+        }
+    } // namespace
+
+    bool isCategoryEnabled(const std::string& level) {
+        std::lock_guard<std::mutex> lock(gCategoryMutex);
+        const auto it = gCategoryEnabled.find(level);
+        if (it == gCategoryEnabled.end()) {
+            return true;
+        }
+
+        return it->second;
+    }
+
+    void setCategoryEnabled(const std::string& level, const bool enabled) {
+        std::lock_guard<std::mutex> lock(gCategoryMutex);
+        gCategoryEnabled[level] = enabled;
+    }
+
     void writeToFile(const std::string& message) {
         try {
-            const std::string path = Utils::getClientPath() + "\\logs\\latest.log";
-
-            std::ofstream file(path, std::ios::app);
-            if (!file.is_open()) {
+            std::lock_guard<std::mutex> lock(gLogMutex);
+            ensureLogFileOpenLocked();
+            if (!gLogFile.is_open()) {
                 throw std::ios_base::failure("Failed to open latest.log");
             }
 
-            file << message << std::endl;
-
-            file.close();
+            gLogFile << message << '\n';
         }
         catch (const std::exception& e) {
             std::cerr << "Error writing to log file: " << e.what() << std::endl;
@@ -27,14 +68,28 @@ namespace Logger {
     }
 
     void initialize() {
-        const std::string path = Utils::getClientPath() + "\\logs\\latest.log";
+        gLogPath = Utils::getClientPath() + "\\logs\\latest.log";
 
         glaiel::crashlogs::set_crashlog_folder(Utils::getLogsPath());
         glaiel::crashlogs::begin_monitoring();
-        
-        if (std::filesystem::exists(path)) {
-            std::ofstream ofs(path, std::ofstream::out | std::ofstream::trunc);
+
+        {
+            std::lock_guard<std::mutex> lock(gLogMutex);
+            if (gLogFile.is_open()) {
+                gLogFile.close();
+            }
+
+            const std::filesystem::path logPath(gLogPath);
+            const auto parent = logPath.parent_path();
+            if (!parent.empty()) {
+                std::error_code ec;
+                std::filesystem::create_directories(parent, ec);
+            }
+
+            std::ofstream ofs(gLogPath, std::ofstream::out | std::ofstream::trunc);
             ofs.close();
+
+            gLogFile.open(gLogPath, std::ios::out | std::ios::app);
         }
 
 #if defined(__DEBUG__)
@@ -66,6 +121,14 @@ namespace Logger {
     }
 
     void shutdown() {
+        {
+            std::lock_guard<std::mutex> lock(gLogMutex);
+            if (gLogFile.is_open()) {
+                gLogFile.flush();
+                gLogFile.close();
+            }
+        }
+
         bool close = true; // Make this true if u want console to close on eject
 
         if (close) {

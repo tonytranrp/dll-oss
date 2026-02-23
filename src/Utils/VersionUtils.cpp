@@ -6,7 +6,7 @@
 #include <Utils/WinrtUtils.hpp>
 #include <Utils/Concurrency/TaskRuntime.hpp>
 
-std::vector<std::pair<std::string, std::pair<std::function<void()>, std::function<void()>>>> VersionUtils::versions;
+std::vector<VersionUtils::VersionEntry> VersionUtils::versions;
 
 std::string VersionUtils::getFormattedVersion() {
     Version currentVersion = WinrtUtils::impl::getGameVersion();
@@ -49,41 +49,41 @@ std::string VersionUtils::getFormattedVersion() {
 
 void VersionUtils::initialize() {
     versions = {
-        {"1.21.11", {SigInit::init21110, OffsetInit::init21110}},
-        {"1.21.10", {SigInit::init21100, OffsetInit::init21100}},
-        {"1.21.9", {SigInit::init2190, OffsetInit::init2190}},
-        {"1.21.8", {SigInit::init2180, OffsetInit::init2180}},
-        {"1.21.7", {SigInit::init2170, OffsetInit::init2170}},
-        {"1.21.6", {SigInit::init2160, OffsetInit::init2160}},
-        {"1.21.5", {SigInit::init2150, OffsetInit::init2150}},
-        {"1.21.4", {SigInit::init2140, OffsetInit::init2140}},
-        {"1.21.3", {SigInit::init2130, OffsetInit::init2130}},
-        {"1.21.2", {SigInit::init2120, OffsetInit::init2120}},
-        {"1.21.02", {SigInit::init2102, OffsetInit::init2100}},
-        {"1.21.1",  {SigInit::init2100, OffsetInit::init2100}},
-        {"1.21.03",  {SigInit::init2100, OffsetInit::init2100}},
-        {"1.20.8", {SigInit::init2080, OffsetInit::init2080}},
-        {"1.20.7", {SigInit::init2070, OffsetInit::init2070}},
-        {"1.20.6", {SigInit::init2060, OffsetInit::init2060}},
-        {"1.20.5", {SigInit::init2050, OffsetInit::init2050}},
-        {"1.20.4", {SigInit::init2040, OffsetInit::init2040}},
-        {"1.20.3", {SigInit::init2030, OffsetInit::init2030}}
+        {"1.21.11", SigInit::init21110, OffsetInit::init21110},
+        {"1.21.10", SigInit::init21100, OffsetInit::init21100},
+        {"1.21.9", SigInit::init2190, OffsetInit::init2190},
+        {"1.21.8", SigInit::init2180, OffsetInit::init2180},
+        {"1.21.7", SigInit::init2170, OffsetInit::init2170},
+        {"1.21.6", SigInit::init2160, OffsetInit::init2160},
+        {"1.21.5", SigInit::init2150, OffsetInit::init2150},
+        {"1.21.4", SigInit::init2140, OffsetInit::init2140},
+        {"1.21.3", SigInit::init2130, OffsetInit::init2130},
+        {"1.21.2", SigInit::init2120, OffsetInit::init2120},
+        {"1.21.02", SigInit::init2102, OffsetInit::init2100},
+        {"1.21.1", SigInit::init2100, OffsetInit::init2100},
+        {"1.21.03", SigInit::init2100, OffsetInit::init2100},
+        {"1.20.8", SigInit::init2080, OffsetInit::init2080},
+        {"1.20.7", SigInit::init2070, OffsetInit::init2070},
+        {"1.20.6", SigInit::init2060, OffsetInit::init2060},
+        {"1.20.5", SigInit::init2050, OffsetInit::init2050},
+        {"1.20.4", SigInit::init2040, OffsetInit::init2040},
+        {"1.20.3", SigInit::init2030, OffsetInit::init2030}
     };
 
     std::ranges::reverse(versions);
 }
 
 bool VersionUtils::isSupported(const std::string& version) {
-    if (std::ranges::any_of(versions, [&version](const auto& p) {
-        return p.first == version;
+    if (std::ranges::any_of(versions, [&version](const VersionEntry& entry) {
+        return entry.version == version;
     })) {
         return true;
     }
 
     std::string supported;
-    for (const auto& [v, _] : versions) {
+    for (const auto& entry : versions) {
         if (!supported.empty()) supported += ", ";
-        supported += v;
+        supported += entry.version;
     }
     Logger::debug("unsupported {} vs supported {}", version, supported);
     return false;
@@ -92,19 +92,29 @@ bool VersionUtils::isSupported(const std::string& version) {
 
 
 void VersionUtils::addData() {
+    Logger::setCategoryEnabled("Signatures", false);
+    Logger::setCategoryEnabled("Offsets", false);
+
+    struct ScopedCategoryReset {
+        ~ScopedCategoryReset() {
+            Logger::setCategoryEnabled("Signatures", true);
+            Logger::setCategoryEnabled("Offsets", true);
+        }
+    } scopedCategoryReset{};
+
     auto signaturesFuture = TaskRuntime::submit([&]() {
-        for (const auto&[fst, snd] : versions) {
-            snd.first(); // Load signatures
-            if (fst == Client::version) {
+        for (const auto& entry : versions) {
+            entry.loadSignatures();
+            if (entry.version == Client::version) {
                 break;
             }
         }
     });
 
     auto offsetsFuture = TaskRuntime::submit([&]() {
-        for (const auto&[fst, snd] : versions) {
-            snd.second(); // Load offsets
-            if (fst == Client::version) {
+        for (const auto& entry : versions) {
+            entry.loadOffsets();
+            if (entry.version == Client::version) {
                 break;
             }
         }
@@ -112,9 +122,6 @@ void VersionUtils::addData() {
 
     signaturesFuture.wait();
     offsetsFuture.wait();
-
-    Mgr.scanAllSignatures();
-
 }
 
 bool VersionUtils::checkAboveOrEqual(const int m, const int b) {

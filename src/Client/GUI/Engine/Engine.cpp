@@ -950,6 +950,13 @@ void FlarialGUI::ExtractImageResource(int resourceId, std::string fileName, LPCT
 	std::string fileType(type);
 
 	std::filesystem::path path(fmt::format("{}\\{}", Utils::getAssetsPath(), fileName));
+	std::error_code ec;
+	if (std::filesystem::exists(path, ec) && !ec) {
+		const auto existingSize = std::filesystem::file_size(path, ec);
+		if (!ec && existingSize == static_cast<uintmax_t>(dwFileSize)) {
+			return;
+		}
+	}
 
 	std::ofstream outFile(path, std::ios::binary);
 	if (!outFile) {

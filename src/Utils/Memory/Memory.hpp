@@ -1,17 +1,18 @@
 ﻿#pragma once
 
-#include <windows.h>
-#include <unknwn.h>
-#include <Psapi.h>
+#include <array>
+#include <cstddef>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
-#include <type_traits>
-#include <format>
+#include <windows.h>
+#include <unknwn.h>
 #include <winrt/base.h>
-
-#include <Utils//Logger/Logger.hpp>
-#include <minhook/MinHook.h>
-#include <libhat/Scanner.hpp>
 
 #define in_range(x, a, b) (x >= a && x <= b)
 #define get_bits(x) (in_range((x & (~0x20)), 'A', 'F') ? ((x & (~0x20)) - 'A' + 0xa) : (in_range(x, '0', '9') ? x - '0' : 0))
@@ -53,6 +54,12 @@ void set##name(const type& v) { direct_access<type>(ptr, offset) = v; }
 
 class Memory {
 public:
+    static inline bool queueHookEnable = false;
+
+    static void setQueueHookEnable(const bool enabled) {
+        queueHookEnable = enabled;
+    }
+
     template<unsigned int IIdx, typename TRet, typename... TArgs>
     static auto CallVFunc(void *thisptr, TArgs... argList) -> TRet {
         using Fn = TRet(__thiscall *)(void *, decltype(argList)...);
@@ -65,21 +72,7 @@ public:
         return (*static_cast<Fn **>(thisptr))[index](thisptr, std::forward<TArgs>(argList)...);
     }
 
-    static void hookFunc(void *pTarget, void *pDetour, void **ppOriginal, std::string name) {
-        if (pTarget == nullptr) {
-            Logger::custom(fg(fmt::color::crimson), "vFunc Hook", "{} has invalid address", name);
-            return;
-        }
-
-        if (MH_CreateHook(pTarget, pDetour, ppOriginal) != MH_OK) {
-            Logger::custom(fg(fmt::color::crimson), "vFunc Hook", "Failed to hook {}", name);
-            return;
-        }
-
-        MH_EnableHook(pTarget);
-
-        Logger::custom(fg(fmt::color::dodger_blue), "vFunc Hook", "Hooked {} at {}", name, pTarget);
-    }
+    static void hookFunc(void *pTarget, void *pDetour, void **ppOriginal, std::string name);
 
     template<typename R, typename... Args>
     static R CallFunc(void *func, Args... args) {
@@ -93,39 +86,8 @@ public:
         hookFunc(vTable[index], pDetour, ppOriginal, std::move(name));
     }
 
-    static uintptr_t findSig(std::string_view signature) {
-        auto parsed = hat::parse_signature(signature);
-        if (!parsed.has_value()) {
-            Logger::custom(fg(fmt::color::crimson), "Signatures", "Failed to parse signature: {} ", signature);
-            return 0u;
-        }
-
-        auto result = hat::find_pattern(parsed.value(), ".text");
-
-        if (!result.has_result()) {
-            Logger::custom(fg(fmt::color::crimson), "Signatures", "Failed to find signature: {} ", signature);
-            return 0u;
-        }
-
-        return reinterpret_cast<uintptr_t>(result.get());
-    }
-
-    static uintptr_t findSig(std::string_view signature, std::string_view name) {
-        auto parsed = hat::parse_signature(signature);
-        if (!parsed.has_value()) {
-            Logger::custom(fg(fmt::color::crimson), "Signatures", "Failed to parse signature: {} ", name);
-            return 0u;
-        }
-
-        auto result = hat::find_pattern(parsed.value(), ".text");
-
-        if (!result.has_result()) {
-            Logger::custom(fg(fmt::color::crimson), "Signatures", "Failed to find signature: {} ", name);
-            return 0u;
-        }
-
-        return reinterpret_cast<uintptr_t>(result.get());
-    }
+    static uintptr_t findSig(std::string_view signature);
+    static uintptr_t findSig(std::string_view signature, std::string_view name);
 
 
     template<typename T>
@@ -143,95 +105,21 @@ public:
         pPtr = nullptr;  // Smart pointer automatically calls Release()
     }
 
-    static uintptr_t findDMAAddy(uintptr_t ptr, const std::vector<unsigned int>& offsets) {
-
-        uintptr_t addr = ptr;
-
-        for (unsigned int offset: offsets) {
-            addr = *(uintptr_t *) addr;
-            addr += offset;
-        }
-        return addr;
-    }
-
-    static void nopBytes(void *dst, const unsigned int size) {
-        if (dst == nullptr) return;
-
-        DWORD oldprotect;
-        VirtualProtect(dst, size, PAGE_EXECUTE_READWRITE, &oldprotect);
-        memset(dst, 0x90, size);
-        VirtualProtect(dst, size, oldprotect, &oldprotect);
-    }
-
-    static void copyBytes(void *src, void *dst, const unsigned int size) {
-        if (src == nullptr || dst == nullptr) return;
-
-        DWORD oldprotect;
-        VirtualProtect(src, size, PAGE_EXECUTE_READWRITE, &oldprotect);
-        memcpy(dst, src, size);
-        VirtualProtect(src, size, oldprotect, &oldprotect);
-    }
-
-    static void patchBytes(void *dst, const void *src, const unsigned int size) {
-        if (src == nullptr || dst == nullptr) return;
-
-        DWORD oldprotect;
-        VirtualProtect(dst, size, PAGE_EXECUTE_READWRITE, &oldprotect);
-        memcpy(dst, src, size);
-        VirtualProtect(dst, size, oldprotect, &oldprotect);
-    }
-
-    static uintptr_t offsetFromSig(uintptr_t sig, int offset) {
-        // REL RIP ADDR RESOLVER
-        // pointer is relative to the code it is in - it is how far to the left in bytes you need to move to get to the value it points to,
-        // this function returns absolute address in memory ("(sig)A B C (+offset)? ? ? ?(+4)(from here + bytes to move to get to value pointer points to) D E F")
-        // offset val = *reinterpret_cast<int *>(sig + offset)
-        // base = sig + offset + 4
-
-        if (sig == 0) return 0;
-        return sig + offset + 4 + *reinterpret_cast<int *>(sig + offset);
-    }
+    static uintptr_t findDMAAddy(uintptr_t ptr, const std::vector<unsigned int>& offsets);
+    static void nopBytes(void *dst, unsigned int size);
+    static void copyBytes(void *src, void *dst, unsigned int size);
+    static void patchBytes(void *dst, const void *src, unsigned int size);
+    static uintptr_t offsetFromSig(uintptr_t sig, int offset);
 
     template<typename Ret>
     static Ret getOffsetFromSig(const uintptr_t sig, const int offset) {
         return reinterpret_cast<Ret>(offsetFromSig(sig, offset));
     }
 
-    static std::array<std::byte, 4> getRipRel(uintptr_t instructionAddress, uintptr_t targetAddress) {
-        uintptr_t relAddress = targetAddress - (instructionAddress + 4); // 4 bytes for RIP-relative addressing
-        std::array<std::byte, 4> relRipBytes{};
-
-        for (size_t i = 0; i < 4; ++i) {
-            relRipBytes[i] = static_cast<std::byte>((relAddress >> (i * 8)) & 0xFF);
-        }
-
-        return relRipBytes;
-    }
-
-    static uintptr_t GetAddressByIndex(uintptr_t vtable, int index) {
-        return *reinterpret_cast<uintptr_t *>(vtable + 8 * index);
-    }
-
-    static void SetProtection(uintptr_t addr, size_t size, DWORD protect) {
-        DWORD oldProtect;
-        VirtualProtect((LPVOID) addr, size, protect, &oldProtect);
-    }
-
-    static std::vector<std::byte> readFile(std::filesystem::path path) {
-        std::ifstream file(path, std::ios::binary);
-        if (!file.is_open()) {
-            return {};
-        }
-        file.seekg(0, std::ios::end);
-        std::streampos fileSize = file.tellg();
-        file.seekg(0, std::ios::beg);
-
-        std::vector<std::byte> buffer(fileSize);
-        file.read(reinterpret_cast<char *>(buffer.data()), fileSize);
-        file.close();
-
-        return buffer;
-    }
+    static std::array<std::byte, 4> getRipRel(uintptr_t instructionAddress, uintptr_t targetAddress);
+    static uintptr_t GetAddressByIndex(uintptr_t vtable, int index);
+    static void SetProtection(uintptr_t addr, size_t size, DWORD protect);
+    static std::vector<std::byte> readFile(const std::filesystem::path& path);
 };
 
 class ScopedVirtualProtect {
