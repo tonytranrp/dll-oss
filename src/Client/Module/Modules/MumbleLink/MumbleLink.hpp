@@ -8,6 +8,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <string>
+#include "Utils/Concurrency/TaskRuntime.hpp"
 
 #include "Manager.hpp"
 
@@ -26,6 +27,8 @@ public:
 	Vec3<float> Pos = Vec3<float>();
 	float yaw, pitch = 0;
 	std::string Context, PlayerName = "";
+	TaskRuntime::TaskId serverTaskId = 0;
+	TaskRuntime::TaskId dataTaskId = 0;
 
 	MumbleLink(): Module("Mumble Link", "Use proximity chat in Flarial with the help of Mumble",
 		IDR_MUMBLE_PNG, "") {

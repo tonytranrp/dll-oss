@@ -32,6 +32,11 @@ void OffsetInit::init21110() {
 
     ADD_OFFSET("Player::gamemode", 0xA78);
 
+    // Keep block-id/name path explicit for 1.21.11X so deep scanners don't depend on older init chains.
+    ADD_OFFSET("Block::blockLegacy", 0x78);
+    ADD_OFFSET("BlockLegacy::name", 0x98);
+    ADD_OFFSET("BlockLegacy::namespace", 0xC0);
+
 //
 }
 
@@ -627,6 +632,20 @@ void OffsetInit::init2030() {
     ADD_OFFSET("Attribute::Health", 6);
 
     ADD_OFFSET("BlockSource::getBlock", 2); // might be incorrect, bounds of versions unknown
+    ADD_OFFSET("BlockSource::getChunkAt", 38);
+    ADD_OFFSET("BlockSource::getChunk", 39);
+    ADD_OFFSET("BlockSource::getChunkXZ", 40);
+    ADD_OFFSET("BlockSource::getChunkSource", 50);
+    ADD_OFFSET("BlockSource::getMinHeight", 33);
+    ADD_OFFSET("BlockSource::getMaxHeight", 34);
+    ADD_OFFSET("BlockSource::areChunksFullyLoaded", 53);
+
+    ADD_OFFSET("LevelChunk::mSubChunks", 0x158);
+    ADD_OFFSET("SubChunk::mBlocksReadPtr", 0x38);
+    ADD_OFFSET("SubChunk::mAbsoluteIndex", 0x5A);
+    ADD_OFFSET("SubChunk::mRenderChunkTrackingVersionNumber", 0x5B);
+    ADD_OFFSET("SubChunkStorage::isUniform", 1);
+    ADD_OFFSET("SubChunkStorage::getElement", 3);
 
     //ADD_OFFSET("ContainerScreenController::_handlePlaceAll", X);
 

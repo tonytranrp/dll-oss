@@ -11,6 +11,7 @@
 #include <imgui/stb.h>
 
 #include <memory>
+#include "Utils/Concurrency/TaskRuntime.hpp"
 
 
 void FlarialGUI::image(const std::string& imageName, D2D1_RECT_F rect) {
@@ -128,7 +129,9 @@ bool FlarialGUI::LoadImageFromFile(const std::string& filePath, ID3D11ShaderReso
 
 bool FlarialGUI::LoadImageFromResource(int resourceId, ID3D11ShaderResourceView** out_srv, LPCTSTR type) {
     // Load image data on a background thread
-    auto future = std::async(std::launch::async, LoadImageDataDX11FromResource, resourceId, type);
+    auto future = TaskRuntime::submit([resourceId, type]() {
+        return LoadImageDataDX11FromResource(resourceId, type);
+    });
     auto image_data_opt = future.get();
     if (!image_data_opt) return false;
     const auto& image_data = *image_data_opt;
@@ -324,7 +327,9 @@ bool FlarialGUI::LoadImageFromResource(int resourceId, D3D12_CPU_DESCRIPTOR_HAND
     }
 
     // Load image data and prepare upload buffer on background thread
-    auto future = std::async(std::launch::async, LoadImageDataFromResource, resourceId, type, SwapchainHook::d3d12Device5.get());
+    auto future = TaskRuntime::submit([resourceId, type]() {
+        return LoadImageDataFromResource(resourceId, type, SwapchainHook::d3d12Device5.get());
+    });
     auto image_data_opt = future.get();
     if (!image_data_opt) return false;
     const auto& image_data = *image_data_opt;
@@ -611,14 +616,9 @@ void FlarialGUI::LoadAllImages() {
 
 
 std::future<void> FlarialGUI::LoadImagesAsync() {
-	std::promise<void> promise;
-	auto future = promise.get_future();
-	std::thread loadThread([promise = std::move(promise)]() mutable {
+	return TaskRuntime::submit([]() {
 		FlarialGUI::LoadAllImages();
-		promise.set_value();
 	});
-	loadThread.detach();
-	return future;
 }
 
 void FlarialGUI::CleanupImageResources() {

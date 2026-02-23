@@ -1,6 +1,7 @@
 #include "CrashTelemetry.hpp"
 #include "APIUtils.hpp"
 #include "Telemetry.hpp"
+#include "Concurrency/TaskRuntime.hpp"
 #include "Logger/Logger.hpp"
 #include "UserActionLogger.hpp"
 #include "Utils.hpp"
@@ -10,7 +11,6 @@
 #include <random>
 #include <sstream>
 #include <iomanip>
-#include <thread>
 #include <chrono>
 #include <filesystem>
 #include <csignal>
@@ -505,7 +505,7 @@ std::string CrashTelemetry::getEnabledModulesText() {
 }
 
 void CrashTelemetry::sendTelemetryAsync(const nlohmann::json& payload) {
-    std::thread([payload]() {
+    TaskRuntime::scheduleDetached([payload]() {
         try {
             std::string jsonData = payload.dump();
             auto result = APIUtils::POST_Simple("https://api.flarial.xyz/api/v1/crash-logs", jsonData);
@@ -518,5 +518,5 @@ void CrashTelemetry::sendTelemetryAsync(const nlohmann::json& payload) {
         } catch (const std::exception& e) {
             Logger::warn("Failed to send crash telemetry: {}", e.what());
         }
-    }).detach();
+    }, "crash-telemetry-send");
 }

@@ -4,6 +4,7 @@
 #include <Utils/Memory/Game/Offset/OffsetInit.hpp>
 #include <Utils/Memory/Game/Sig/SigInit.hpp>
 #include <Utils/WinrtUtils.hpp>
+#include <Utils/Concurrency/TaskRuntime.hpp>
 
 std::vector<std::pair<std::string, std::pair<std::function<void()>, std::function<void()>>>> VersionUtils::versions;
 
@@ -91,7 +92,7 @@ bool VersionUtils::isSupported(const std::string& version) {
 
 
 void VersionUtils::addData() {
-    std::thread t1([&](){
+    auto signaturesFuture = TaskRuntime::submit([&]() {
         for (const auto&[fst, snd] : versions) {
             snd.first(); // Load signatures
             if (fst == Client::version) {
@@ -100,7 +101,7 @@ void VersionUtils::addData() {
         }
     });
 
-    std::thread t2([&](){
+    auto offsetsFuture = TaskRuntime::submit([&]() {
         for (const auto&[fst, snd] : versions) {
             snd.second(); // Load offsets
             if (fst == Client::version) {
@@ -109,9 +110,8 @@ void VersionUtils::addData() {
         }
     });
 
-
-    t1.join();
-    t2.join();
+    signaturesFuture.wait();
+    offsetsFuture.wait();
 
     Mgr.scanAllSignatures();
 

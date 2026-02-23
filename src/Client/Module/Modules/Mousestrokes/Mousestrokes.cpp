@@ -10,20 +10,25 @@ void Mousestrokes::onEnable()
 	Listen(this, MouseEvent, &Mousestrokes::onMouse);
 	Module::onEnable();
 
-	std::thread normalizeCursor([&]() {
-		while (!Client::disable) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	normalizeTaskId = TaskRuntime::scheduleLoop(
+		[this]() -> bool {
+			if (Client::disable || !this->isEnabled()) {
+				return false;
+			}
 
 			X *= 0.01;
 			Y *= 0.01;
-		}
-		});
-
-	normalizeCursor.detach();
+			return true;
+		},
+		std::chrono::milliseconds(10),
+		std::chrono::milliseconds::zero(),
+		"mousestrokes-normalize"
+	);
 }
 
 void Mousestrokes::onDisable()
 {
+	TaskRuntime::cancelTask(normalizeTaskId);
 	Deafen(this, RenderEvent, &Mousestrokes::onRender);
 	Deafen(this, MouseEvent, &Mousestrokes::onMouse);
 	Module::onDisable();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Module.hpp"
+#include "Utils/Concurrency/TaskRuntime.hpp"
 
 
 class Mousestrokes : public Module
@@ -38,6 +39,7 @@ public:
 
     int X = 0;
     int Y = 0;
+    TaskRuntime::TaskId normalizeTaskId = 0;
 
     Vec2<float> CurrentCursorPos = Vec2<float>(0, 0);
 };

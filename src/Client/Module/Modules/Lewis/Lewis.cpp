@@ -1,6 +1,7 @@
 #include "Lewis.hpp"
 
 #include "GUI/Engine/Constraints.hpp"
+#include "Utils/Concurrency/TaskRuntime.hpp"
 
 
 void Lewis::onEnable()
@@ -72,12 +73,9 @@ void Lewis::onRender(RenderEvent& event)
         {
             if ((NextLewisScream - std::chrono::system_clock::now()).count() < 0)
             {
-                std::thread thread([&]()
-                {
+                TaskRuntime::scheduleDetached([]() {
                     Audio::play(Utils::getAssetsPath() + "\\lewis.mp3");
-                });
-
-                thread.detach();
+                }, "lewis-scream-audio");
 
                 std::random_device rd;  // Seed
                 std::mt19937 gen(rd()); // Mersenne Twister engine

@@ -1,6 +1,5 @@
 #include "HiveStat.hpp"
 
-#include <thread>
 #include <vector>
 #include <algorithm>
 #include <functional>
@@ -18,11 +17,8 @@ void HiveStat::onEnable() {
 }
 
 void HiveStat::onDisable() {
-    stopThread = true;
-    for (auto &[name, thread]: playerThreads) {
-        if (thread.joinable()) {
-            thread.join();
-        }
+    for (const auto& [name, taskId] : playerThreads) {
+        TaskRuntime::cancelTask(taskId);
     }
     playerThreads.clear();
     Deafen(this, RenderEvent, &HiveStat::onRender)
@@ -538,10 +534,9 @@ void HiveStat::onRender(RenderEvent &event) {
                     std::unique_lock<std::shared_mutex> lock(queueMutex);
                     if (std::find(queueList.begin(), queueList.end(), name) == queueList.end()) {
                         queueList.push_back(name);
-                        playerThreads[name] = std::thread([this, name]() {
+                        playerThreads[name] = TaskRuntime::scheduleDetached([this, name]() {
                             fetchPlayerStats(name);
-                        });
-                        playerThreads[name].detach();
+                        }, "hivestat-fetch-player");
                     }
                     ImGui::Text("Loading stats...");
                     for (int col = 3; col < columnAmount; ++col) {

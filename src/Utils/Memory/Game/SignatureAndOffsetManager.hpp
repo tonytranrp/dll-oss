@@ -2,6 +2,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include "../Utils/Utils.hpp"
 
 #define DEPRECATE_SIG(name) \
@@ -60,11 +61,13 @@ public:
 
 private:
     struct SignatureData {
+        unsigned int hash;
         std::string signature;
         std::string name;
         uintptr_t address;
     };
-    std::unordered_map<unsigned int, SignatureData> sigs{};
+    std::vector<SignatureData> sigs{};
+    std::unordered_map<unsigned int, std::size_t> sigIndices{};
     std::unordered_map<unsigned int, int> offsets{};
 };
 

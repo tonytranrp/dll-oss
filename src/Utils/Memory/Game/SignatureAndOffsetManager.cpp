@@ -1,32 +1,60 @@
 #include "SignatureAndOffsetManager.hpp"
 
+#include <algorithm>
+#include <Utils/Concurrency/TaskRuntime.hpp>
 #include <Utils/Memory/Memory.hpp>
+#include <future>
 #include <thread>
-#include <atomic>
+#include <utility>
+#include <vector>
 
 SignatureAndOffsetManager Mgr;
 
 void SignatureAndOffsetManager::addSignature(unsigned int hash, const char* sig, const char* name) {
-    sigs[hash] = { sig, name, 0 };
+    auto it = sigIndices.find(hash);
+    if (it != sigIndices.end()) {
+        auto& existing = sigs[it->second];
+        existing.signature = sig;
+        existing.name = name;
+        existing.address = 0;
+        return;
+    }
+
+    sigIndices[hash] = sigs.size();
+    sigs.push_back({ hash, sig, name, 0 });
 }
 
 void SignatureAndOffsetManager::removeSignature(unsigned int hash) {
-    sigs.erase(hash);
+    auto it = sigIndices.find(hash);
+    if (it == sigIndices.end()) {
+        return;
+    }
+
+    const auto index = it->second;
+    const auto lastIndex = sigs.size() - 1;
+
+    if (index != lastIndex) {
+        sigs[index] = std::move(sigs[lastIndex]);
+        sigIndices[sigs[index].hash] = index;
+    }
+
+    sigs.pop_back();
+    sigIndices.erase(it);
 }
 
 const char* SignatureAndOffsetManager::getSig(unsigned int hash) const {
-    auto it = sigs.find(hash);
-    return it != sigs.end() ? it->second.signature.c_str() : nullptr;
+    auto it = sigIndices.find(hash);
+    return it != sigIndices.end() ? sigs[it->second].signature.c_str() : nullptr;
 }
 
 const char* SignatureAndOffsetManager::getSigName(unsigned int hash) const {
-    auto it = sigs.find(hash);
-    return it != sigs.end() ? it->second.name.c_str() : nullptr;
+    auto it = sigIndices.find(hash);
+    return it != sigIndices.end() ? sigs[it->second].name.c_str() : nullptr;
 }
 
 uintptr_t SignatureAndOffsetManager::getSigAddress(unsigned int hash) const {
-    auto it = sigs.find(hash);
-    return it != sigs.end() ? it->second.address : 0;
+    auto it = sigIndices.find(hash);
+    return it != sigIndices.end() ? sigs[it->second].address : 0;
 }
 
 void SignatureAndOffsetManager::addOffset(unsigned int hash, int offset) {
@@ -40,29 +68,35 @@ int SignatureAndOffsetManager::getOffset(unsigned int hash) const {
 
 void SignatureAndOffsetManager::clear() {
     sigs.clear();
+    sigIndices.clear();
     offsets.clear();
 }
 
 void SignatureAndOffsetManager::scanAllSignatures() {
-    const unsigned int numThreads = std::thread::hardware_concurrency();
-    std::vector<std::thread> threads;
-    std::atomic<size_t> index{0};
-
-    auto worker = [this, &index]() {
-        while (true) {
-            size_t i = index.fetch_add(1, std::memory_order_relaxed);
-            if (i >= sigs.size()) break;  // No more work
-
-            auto& sigPair = *(std::next(sigs.begin(), i));
-            sigPair.second.address = Memory::findSig(sigPair.second.signature, sigPair.second.name);
-        }
-    };
-
-    for (unsigned int i = 0; i < numThreads; ++i) {
-        threads.emplace_back(worker);
+    if (sigs.empty()) {
+        return;
     }
 
-    for (auto& t : threads) {
-        t.join();
+    const std::size_t total = sigs.size();
+    const std::size_t workerCount = std::max<std::size_t>(1, std::thread::hardware_concurrency());
+    const std::size_t chunkSize = std::max<std::size_t>(1, (total + workerCount - 1) / workerCount);
+
+    std::vector<std::future<void>> futures;
+    futures.reserve((total + chunkSize - 1) / chunkSize);
+
+    for (std::size_t begin = 0; begin < total; begin += chunkSize) {
+        const std::size_t end = std::min(total, begin + chunkSize);
+        futures.emplace_back(TaskRuntime::submit([begin, end, this]() {
+            for (std::size_t index = begin; index < end; ++index) {
+                auto& signature = sigs[index];
+                signature.address = Memory::findSig(signature.signature, signature.name);
+            }
+        }));
+    }
+
+    for (auto& future : futures) {
+        if (future.valid()) {
+            future.wait();
+        }
     }
 }

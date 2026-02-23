@@ -109,6 +109,7 @@
 #include "Modules/Coordinates/Coordinates.hpp"
 #include "Modules/DisableMouseWheel/DisableMouseWheel.hpp"
 #include "Modules/DebugMenu/DebugMenu.hpp"
+#include "Modules/PathFinding/PathFinding.hpp"
 #include "Modules/DirectionHUD/DirectionHUD.hpp"
 #include "Modules/JavaViewBobbing/JavaViewBobbing.hpp"
 #include "Modules/DeathLogger/DeathLogger.hpp"
@@ -288,6 +289,7 @@ void ModuleManager::initialize() {
 	addModule<Coordinates>();
 	addModule<DisableMouseWheel>();
 	addModule<JavaDebugMenu>();
+	addModule<PathFindingModule>();
 	addModule<DirectionHUD>();
 
 	addModule<JavaViewBobbing>();

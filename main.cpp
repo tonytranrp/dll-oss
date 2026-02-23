@@ -11,6 +11,7 @@
 #include <wininet.h>
 #include <Utils/WinrtUtils.hpp>
 #include <Utils/Audio.hpp>
+#include <thread>
 
 #include "curl/curl/curl.h"
 #include "Scripting/ScriptManager.hpp"
@@ -19,6 +20,9 @@
 #include "src/Client/Command/CommandManager.hpp"
 #include "src/SDK/Client/Options/OptionsParser.hpp"
 #include "Utils/APIUtils.hpp"
+#include "Utils/Concurrency/TaskRuntime.hpp"
+
+using namespace std::chrono_literals;
 
 std::chrono::steady_clock::time_point lastBeatTime;
 std::chrono::steady_clock::time_point lastVipFetchTime;
@@ -26,6 +30,8 @@ std::chrono::steady_clock::time_point lastOnlineUsersFetchTime;
 std::chrono::steady_clock::time_point lastAnnouncementTime;
 static HANDLE mutex;
 
+static TaskRuntime::TaskId statusTaskId = 0;
+static TaskRuntime::TaskId moduleSyncTaskId = 0;
 
 void SavePlayerCache() {
     std::string playersListString = APIUtils::VectorToList(APIUtils::onlineUsers);
@@ -45,121 +51,142 @@ void SavePlayerCache() {
         LOG_ERROR("Could not open file for writing: " + filePath);
     }
 }
-// hi
+
 float Client::elapsed;
 uint64_t Client::start;
+
+void runStatusTick() {
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastBeatTime);
+    auto onlineUsersFetchElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastOnlineUsersFetchTime);
+    auto onlineAnnouncementElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastAnnouncementTime);
+    auto vipFetchElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastVipFetchTime);
+
+    if (!SDK::hasInstanced || SDK::clientInstance == nullptr || SDK::clientInstance->getLocalPlayer() == nullptr) {
+        return;
+    }
+
+    if (elapsed >= std::chrono::seconds(60)) {
+        std::string name = SDK::clientInstance->getLocalPlayer()->getPlayerName();
+        std::string ipToSend = SDK::getServerIP();
+
+        if (Client::settings.getSettingByName<bool>("anonymousApi")->value) {
+            ipToSend = "is.anonymous";
+        } else if (ipToSend.find("none") != std::string::npos || ipToSend.empty()) {
+            ipToSend = "in.singleplayer";
+        }
+
+        auto module = ModuleManager::getModule("Nick");
+        if (module && module->isEnabled()) {
+            name = String::removeNonAlphanumeric(String::removeColorCodes(NickModule::original));
+            name = String::replaceAll(name, "�", "");
+        }
+
+        std::string clearedName = String::removeNonAlphanumeric(String::removeColorCodes(name));
+        if (clearedName.empty()) clearedName = String::removeColorCodes(name);
+
+        if (clearedName != "skinStandardCust") {
+            APIUtils::legacyGet(std::format("https://api.flarial.xyz/heartbeat/{}/{}", clearedName, ipToSend));
+            lastBeatTime = now;
+        }
+    }
+
+    if (onlineUsersFetchElapsed >= std::chrono::minutes(3) && Client::settings.getSettingByName<bool>("apiusage")->value) {
+        try {
+            std::string data = APIUtils::VectorToList(APIUtils::onlineUsers);
+            std::pair<long, std::string> post = APIUtils::POST_Simple("https://api.flarial.xyz/allOnlineUsers", data);
+            APIUtils::onlineUsers = APIUtils::UpdateVector(APIUtils::onlineUsers, post.second);
+            APIUtils::onlineUsersSet = APIUtils::onlineUsers | std::ranges::to<decltype(APIUtils::onlineUsersSet)>();
+            SavePlayerCache();
+            lastOnlineUsersFetchTime = now;
+        } catch (const std::exception& ex) {
+            LOG_ERROR("An error occurred while parsing online users: {}", ex.what());
+        }
+    }
+
+    if (vipFetchElapsed >= std::chrono::minutes(3) && Client::settings.getSettingByName<bool>("apiusage")->value) {
+        try {
+            auto vipsJson = APIUtils::getVips();
+            decltype(APIUtils::vipUserToRole) updatedVips;
+
+            for (const auto& [role, users] : vipsJson.items()) {
+                if (users.is_array()) {
+                    for (const auto& user : users) {
+                        if (user.is_string()) {
+                            updatedVips[user.get<std::string>()] = role;
+                        }
+                    }
+                }
+            }
+
+            if (!updatedVips.empty()) {
+                APIUtils::vipUserToRole = std::move(updatedVips);
+            }
+            lastVipFetchTime = now;
+        } catch (const std::exception& e) {
+            LOG_ERROR("An error occurred while parsing VIP users: {}", e.what());
+        }
+    }
+
+    if (onlineAnnouncementElapsed >= std::chrono::minutes(10) && ModuleManager::initialized &&
+        Client::settings.getSettingByName<bool>("promotions")->value) {
+        if (SDK::clientInstance && SDK::clientInstance->getGuiData()) {
+            SDK::clientInstance->getGuiData()->displayClientMessage(
+                "§khiii §r §n§l§4FLARIAL §r§khiii \n§r§cDonate to Flarial! §ehttps://flarial.xyz/donate\n§9Join our discord! §ehttps://flarial.xyz/discord"
+            );
+            lastAnnouncementTime = now;
+        }
+    }
+}
 
 DWORD WINAPI init() {
     Client::start = Utils::getCurrentMs();
     Logger::initialize();
-    std::thread lol([]() { Audio::init(); });
-    lol.detach();
+    TaskRuntime::initialize();
+
+    lastBeatTime = std::chrono::steady_clock::now();
+    lastVipFetchTime = std::chrono::steady_clock::now();
+    lastOnlineUsersFetchTime = std::chrono::steady_clock::now();
+    lastAnnouncementTime = std::chrono::steady_clock::now();
+
+    TaskRuntime::scheduleDetached([]() { Audio::init(); }, "audio-init");
     Client::initialize();
 
-    Client::elapsed = (Utils::getCurrentMs() - Client::start) / 1000.0;
+    Client::elapsed = (Utils::getCurrentMs() - Client::start) / 1000.0f;
 
     Logger::success("Flarial initialized in {:.2f}s", Client::elapsed);
 
     OptionsParser parser;
     parser.parseOptionsFile();
 
-    std::thread statusThread([]() {
-    while (!Client::disable) {
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastBeatTime);
-        auto onlineUsersFetchElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastOnlineUsersFetchTime);
-        auto onlineAnnouncementElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastAnnouncementTime);
-        auto vipFetchElapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastVipFetchTime);
-
-        if (!SDK::hasInstanced || SDK::clientInstance == nullptr || SDK::clientInstance->getLocalPlayer() == nullptr) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(60));
-            continue;
-        }
-
-        if (elapsed >= std::chrono::seconds(60)) {
-            std::string name = SDK::clientInstance->getLocalPlayer()->getPlayerName();
-            std::string ipToSend = SDK::getServerIP();
-
-            if (Client::settings.getSettingByName<bool>("anonymousApi")->value) {
-                ipToSend = "is.anonymous";
-            } else if (ipToSend.find("none") != std::string::npos || ipToSend.empty()) {
-                ipToSend = "in.singleplayer";
+    statusTaskId = TaskRuntime::schedulePeriodic(
+        []() {
+            if (!Client::disable) {
+                runStatusTick();
             }
+        },
+        60ms,
+        std::chrono::milliseconds::zero(),
+        "status-loop"
+    );
 
-            auto module = ModuleManager::getModule("Nick");
-            if (module && module->isEnabled()) {
-                name = String::removeNonAlphanumeric(String::removeColorCodes(NickModule::original));
-                name = String::replaceAll(name, "�", "");
+    moduleSyncTaskId = TaskRuntime::schedulePeriodic(
+        []() {
+            if (!Client::disable) {
+                ModuleManager::syncState();
             }
-
-            std::string clearedName = String::removeNonAlphanumeric(String::removeColorCodes(name));
-            if (clearedName.empty()) clearedName = String::removeColorCodes(name);
-
-            if (clearedName != "skinStandardCust") {
-                APIUtils::legacyGet(std::format("https://api.flarial.xyz/heartbeat/{}/{}", clearedName, ipToSend));
-                lastBeatTime = now;
-            }
-        }
-
-        if (onlineUsersFetchElapsed >= std::chrono::minutes(3) && Client::settings.getSettingByName<bool>("apiusage")->value) {
-            try {
-                std::string data = APIUtils::VectorToList(APIUtils::onlineUsers);
-                std::pair<long, std::string> post = APIUtils::POST_Simple("https://api.flarial.xyz/allOnlineUsers", data);
-                APIUtils::onlineUsers = APIUtils::UpdateVector(APIUtils::onlineUsers, post.second);
-                APIUtils::onlineUsersSet = APIUtils::onlineUsers | std::ranges::to<decltype(APIUtils::onlineUsersSet)>();
-                SavePlayerCache();
-                lastOnlineUsersFetchTime = now;
-            } catch (const std::exception &ex) {
-                LOG_ERROR("An error occurred while parsing online users: {}", ex.what());
-            }
-        }
-
-        if (vipFetchElapsed >= std::chrono::minutes(3) && Client::settings.getSettingByName<bool>("apiusage")->value) {
-            try {
-                auto vipsJson = APIUtils::getVips();
-                decltype(APIUtils::vipUserToRole) updatedVips;
-
-                for (const auto& [role, users] : vipsJson.items()) {
-                    if (users.is_array()) {
-                        for (const auto& user : users) {
-                            if (user.is_string()) {
-                                updatedVips[user.get<std::string>()] = role;
-                            }
-                        }
-                    }
-                }
-
-                if (!updatedVips.empty()) {
-                    APIUtils::vipUserToRole = std::move(updatedVips);
-                }
-                lastVipFetchTime = now;
-            } catch (const std::exception& e) {
-                LOG_ERROR("An error occurred while parsing VIP users: {}", e.what());
-            }
-        }
-
-        if (onlineAnnouncementElapsed >= std::chrono::minutes(10) && ModuleManager::initialized &&
-            Client::settings.getSettingByName<bool>("promotions")->value) {
-            if (SDK::clientInstance and SDK::clientInstance->getGuiData())
-            {
-                SDK::clientInstance->getGuiData()->displayClientMessage(
-                    "§khiii §r §n§l§4FLARIAL §r§khiii \n§r§cDonate to Flarial! §ehttps://flarial.xyz/donate\n§9Join our discord! §ehttps://flarial.xyz/discord"
-                );
-                lastAnnouncementTime = now;
-            }
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(60));
-    }
-});
-
-    statusThread.detach();
+        },
+        10ms,
+        std::chrono::milliseconds::zero(),
+        "module-sync"
+    );
 
     while (!Client::disable) {
-        ModuleManager::syncState();
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
+        std::this_thread::sleep_for(50ms);
     }
+
+    TaskRuntime::cancelTask(statusTaskId);
+    TaskRuntime::cancelTask(moduleSyncTaskId);
 
     ModuleManager::terminate();
     Logger::custom(fmt::fg(fmt::color::pink), "ModuleManager", "Shut down");
@@ -178,13 +205,12 @@ DWORD WINAPI init() {
     Logger::custom(fmt::fg(fmt::color::pink), "DirectX", "Cleaning");
 
     kiero::shutdown();
-
     Logger::custom(fmt::fg(fmt::color::pink), "Kiero", "Shut down");
 
     Audio::cleanup();
-
     Logger::custom(fmt::fg(fmt::color::pink), "Audio", "Shut down");
 
+    TaskRuntime::shutdown(std::chrono::seconds(8));
 
     MH_DisableHook(MH_ALL_HOOKS);
     MH_Uninitialize();
@@ -199,7 +225,6 @@ DWORD WINAPI init() {
     CloseHandle(mutex);
     FreeLibraryAndExitThread(Client::currentModule, 0);
 }
-
 
 BOOL APIENTRY DllMain(HMODULE instance, DWORD ul_reason_for_call, LPVOID lpReserved) {
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {

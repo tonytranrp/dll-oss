@@ -48,6 +48,8 @@ add_compile_options($<$<CONFIG:Release>:/GF>)
 
 # Inline any suitable function to improve performance by reducing function call overhead
 add_compile_options($<$<CONFIG:Release>:/Ob2>)
+add_compile_options($<$<CONFIG:Debug>:/Zf>)
+add_link_options($<$<CONFIG:Debug>:/DEBUG:FASTLINK>)
 
 add_compile_options(/bigobj)
 add_compile_options(/utf-8)
@@ -71,8 +73,8 @@ add_compile_definitions(
         FLARIAL_BUILD_DATE=\"${FLARIAL_BUILD_DATE}\"
 )
 
-file(GLOB_RECURSE SOURCE_FILES "src/*.cpp" "src/*.hpp")
-file(GLOB_RECURSE LIB_FILES "lib/*.cpp" "lib/*.h")
+file(GLOB_RECURSE SOURCE_FILES "src/*.cpp")
+file(GLOB_RECURSE LIB_FILES "lib/*.cpp")
 add_library(Flarial SHARED main.cpp ${SOURCE_FILES} ${LIB_FILES} src/Assets/Assets.rc
         src/SDK/Client/Network/Packet/AnimatePacket.hpp
         src/Client/Module/Modules/Subtitles/Subtitles.cpp
@@ -120,6 +122,19 @@ set_target_properties(zlib PROPERTIES
 set_target_properties(zlib PROPERTIES IMPORTED_IMPLIB "${CMAKE_CURRENT_SOURCE_DIR}/lib/curl/zlib.lib")
 
 include(FetchContent)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "" FORCE)
+
+set(TF_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(TF_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(TF_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(TF_BUILD_CUDA OFF CACHE BOOL "" FORCE)
+set(TF_BUILD_SYCL OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+        taskflow
+        GIT_REPOSITORY https://github.com/taskflow/taskflow.git
+        GIT_TAG        v3.8.0
+)
 
 FetchContent_Declare(
         entt
@@ -157,7 +172,9 @@ FetchContent_Declare(
         GIT_TAG        master
 )
 
-FetchContent_MakeAvailable(libhat entt nes fmt magic_enum LuaBridge)
+FetchContent_MakeAvailable(taskflow libhat entt nes fmt magic_enum LuaBridge)
+
+target_include_directories(Flarial PRIVATE "${taskflow_SOURCE_DIR}")
 
 target_link_libraries(Flarial PRIVATE libcurl ws2_32.lib crypt32.lib normaliz.lib wldap32.lib LuaBridge lua_static libhat fmt::fmt EnTT::EnTT NES windowscodecs.lib urlmon.lib dwrite.lib d3d12.lib dxgi.lib d3d11.lib d2d1.lib wininet.lib setupapi.lib version FreeType magic_enum runtimeobject)
 

@@ -5,7 +5,6 @@
 #include <mutex>
 #include <chrono>
 #include <atomic>
-#include <thread>
 #include <future>
 #include <queue>
 #include <condition_variable>
@@ -16,6 +15,7 @@
 #include "Hook/Hooks/Render/DirectX/DXGI/SwapchainHook.hpp"
 #include "Modules/ClickGUI/ClickGUI.hpp"
 #include "Modules/Nick/NickModule.hpp"
+#include "Utils/Concurrency/TaskRuntime.hpp"
 #include "../../Manager.hpp"
 
 bool logDebug = false;
@@ -77,7 +77,7 @@ static std::condition_variable g_loadQueueCV;
 static std::queue<PlayerHeadReadyTexture> g_readyQueue; // Textures ready for main thread processing
 static std::mutex g_readyQueueMutex;
 static std::atomic<bool> g_shouldStopLoading{false};
-static std::vector<std::thread> g_loaderThreads;
+static std::vector<TaskRuntime::TaskId> g_loaderTasks;
 static constexpr int NUM_LOADER_THREADS = 3; // Use 3 threads for loading
 
 
@@ -400,14 +400,11 @@ void StopAsyncLoading()
     g_shouldStopLoading = true;
     g_loadQueueCV.notify_all();
 
-    for (auto& thread : g_loaderThreads)
+    for (const auto taskId : g_loaderTasks)
     {
-        if (thread.joinable())
-        {
-            thread.join();
-        }
+        TaskRuntime::cancelTask(taskId);
     }
-    g_loaderThreads.clear();
+    g_loaderTasks.clear();
 
     // Clear remaining queues
     {
@@ -536,14 +533,17 @@ void PlayerHeadLoaderWorker()
 
 void TabList::InitializeAsyncLoading()
 {
-    if (!g_loaderThreads.empty()) return; // Already initialized
+    if (!g_loaderTasks.empty()) return; // Already initialized
 
     g_shouldStopLoading = false;
-    g_loaderThreads.reserve(NUM_LOADER_THREADS);
+    g_loaderTasks.reserve(NUM_LOADER_THREADS);
 
     for (int i = 0; i < NUM_LOADER_THREADS; ++i)
     {
-        g_loaderThreads.emplace_back(PlayerHeadLoaderWorker);
+        g_loaderTasks.emplace_back(TaskRuntime::scheduleDetached(
+            []() { PlayerHeadLoaderWorker(); },
+            "tablist-playerhead-loader"
+        ));
     }
 
     if (logDebug) Logger::debug("Initialized {} playerhead loader threads", NUM_LOADER_THREADS);

@@ -2,6 +2,7 @@
 
 #include <Utils/Logger/Logger.hpp>
 #include <Utils/Utils.hpp>
+#include <Utils/Concurrency/TaskRuntime.hpp>
 #include "../Client/GUI/Engine/Engine.hpp"
 
 #include <winrt/base.h>
@@ -64,8 +65,10 @@ void WinrtUtils::setCursor(winrt::Windows::UI::Core::CoreCursor cursor) {
 
 void WinrtUtils::setCursorTypeThreaded(winrt::Windows::UI::Core::CoreCursorType cursor, int resId) {
     if (ModuleManager::getModule("ClickGUI")->active || ClickGUI::editmenu) {
-        std::thread troll([cursor, resId]() { WinrtUtils::setCursor(winrt::Windows::UI::Core::CoreCursor(cursor, resId)); });
-        troll.detach();
+        TaskRuntime::scheduleDetached(
+            [cursor, resId]() { WinrtUtils::setCursor(winrt::Windows::UI::Core::CoreCursor(cursor, resId)); },
+            "set-cursor-threaded"
+        );
     }
 }
 

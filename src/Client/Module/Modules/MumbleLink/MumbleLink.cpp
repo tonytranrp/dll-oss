@@ -4,37 +4,37 @@
 void MumbleLink::onEnable()
 {
     Module::onEnable();
-    std::thread serverthread([&]() {
+    serverTaskId = TaskRuntime::scheduleLoop([this]() -> bool {
         while (this->isEnabled()) {
             SendDataToServer();
             Sleep(5000);
         }
-    });
-    std::thread datathread([&]() {
-        while (this->isEnabled()) {
-            if (SDK::clientInstance and SDK::clientInstance->getLocalPlayer()) {
-                Pos = *SDK::clientInstance->getLocalPlayer()->getPosition();
-                auto rot = SDK::clientInstance->getLocalPlayer()->getActorRotationComponent()->rot;
-                yaw = rot.x;
-                pitch = rot.y;
-                PlayerName = SDK::clientInstance->getLocalPlayer()->getPlayerName();
-                Context = getOps<std::string>("context").empty() ? SDK::getServerIP() : getOps<std::string>("context");
-            }
-            else {
+        return false;
+    }, std::chrono::milliseconds::zero(), std::chrono::milliseconds::zero(), "mumble-server");
 
-            }
-
-            Sleep(20);
+    dataTaskId = TaskRuntime::scheduleLoop([this]() -> bool {
+        if (!this->isEnabled()) {
+            return false;
         }
-    });
 
-    serverthread.detach();
-    datathread.detach();
+        if (SDK::clientInstance && SDK::clientInstance->getLocalPlayer()) {
+            Pos = *SDK::clientInstance->getLocalPlayer()->getPosition();
+            auto rot = SDK::clientInstance->getLocalPlayer()->getActorRotationComponent()->rot;
+            yaw = rot.x;
+            pitch = rot.y;
+            PlayerName = SDK::clientInstance->getLocalPlayer()->getPlayerName();
+            Context = getOps<std::string>("context").empty() ? SDK::getServerIP() : getOps<std::string>("context");
+        }
+
+        return true;
+    }, std::chrono::milliseconds(20), std::chrono::milliseconds::zero(), "mumble-state");
 
 }
 
 void MumbleLink::onDisable()
 {
+    TaskRuntime::cancelTask(serverTaskId);
+    TaskRuntime::cancelTask(dataTaskId);
     Module::onDisable();
 }
 

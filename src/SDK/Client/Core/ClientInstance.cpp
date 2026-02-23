@@ -1,6 +1,8 @@
 #include "ClientInstance.hpp"
 #include "../../SDK.hpp"
 #include <libhat/Access.hpp>
+#include <thread>
+#include <Utils/Concurrency/TaskRuntime.hpp>
 
 LocalPlayer *ClientInstance::getLocalPlayer() {
     // Indig0r
@@ -22,7 +24,7 @@ BlockSource *ClientInstance::getBlockSource() {
 
 void ClientInstance::grabMouse(int delay) {
     if (delay > 0 ) {
-        std::thread troll([this, delay]() {
+        TaskRuntime::scheduleDetached([this, delay]() {
             std::this_thread::sleep_for(std::chrono::milliseconds(delay));
             static uintptr_t indexRef;
 
@@ -32,8 +34,7 @@ void ClientInstance::grabMouse(int delay) {
 
             int index = *reinterpret_cast<int*>(indexRef + 3) / 8;
             return Memory::CallVFuncI<void>(index, this);
-        });
-        troll.detach();
+        }, "grab-mouse-delayed");
     } else {
         static uintptr_t indexRef;
 

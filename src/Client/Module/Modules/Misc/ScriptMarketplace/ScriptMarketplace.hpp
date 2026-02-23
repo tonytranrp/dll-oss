@@ -3,7 +3,6 @@
 #include <random>
 #include <filesystem>
 #include <fstream>
-#include <thread>
 #include <algorithm>
 #include <vector>
 #include <sstream>
@@ -13,6 +12,7 @@
 #include "miniz.h"
 #include "../../../../Client.hpp"
 #include "../../../../../Utils/Logger/Logger.hpp"
+#include "../../../../../Utils/Concurrency/TaskRuntime.hpp"
 #include "curl/curl/curl.h"
 #include <Scripting/ScriptManager.hpp>
 
@@ -136,7 +136,7 @@ public:
         std::string scriptName = String::WStrToStr(scriptNameW);
         std::string scriptType = String::WStrToStr(scriptTypeW);
         FlarialGUI::Notify("Importing script '" + scriptName + "'... this may take a while.");
-        std::thread([this, scriptName, scriptType]() {
+        TaskRuntime::scheduleDetached([this, scriptName, scriptType]() {
             // First, get the script index to find the correct path
             std::string indexUrl = fmt::format("https://cdn.statically.io/gh/flarialmc/scripts/main/{}-index.json", scriptType);
             Logger::info("Fetching script index from: {}", indexUrl);
@@ -251,7 +251,7 @@ public:
             FlarialGUI::Notify("Successfully imported script '" + scriptName + "'");
             ModuleManager::restartModules = true;
             ScriptManager::reloadScripts();
-        }).detach();
+        }, "script-marketplace-import");
     }
 
     // Ensure this callback is declared as static if it's inside a class.
@@ -338,7 +338,7 @@ public:
             if (pair.first == std::wstring(L"configName")) {
                 std::string id = String::WStrToStr(pair.second);
                 FlarialGUI::Notify("Importing config ..." + id + " this may take a while.");
-                std::thread([this, id]() {
+                TaskRuntime::scheduleDetached([this, id]() {
                     Logger::info("config name {}", id);
 
                     // Convert to lowercase for GitHub CDN compatibility  
@@ -478,7 +478,7 @@ public:
                     FlarialGUI::Notify("Successfully imported config: " + configname);
                     ModuleManager::restartModules = true;
                     reloadAllConfigs();
-                }).detach();
+                }, "script-marketplace-config-import");
             }
         }
     }

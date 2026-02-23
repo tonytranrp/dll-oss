@@ -2,6 +2,7 @@
 #include <json/json.hpp>
 #include "APIUtils.hpp"
 #include "Utils.hpp"
+#include "Concurrency/TaskRuntime.hpp"
 #include "Logger/Logger.hpp"
 #include <windows.h>
 #include <wincrypt.h>
@@ -137,7 +138,7 @@ std::string Telemetry::getClientVersion() {
 }
 
 void Telemetry::sendTelemetryAsync(const nlohmann::json& payload) {
-    std::thread([payload]() {
+    TaskRuntime::scheduleDetached([payload]() {
         try {
             std::string jsonData = payload.dump();
             auto result = APIUtils::POST_Simple("https://api.flarial.xyz/telemetry/module-events", jsonData);
@@ -148,5 +149,5 @@ void Telemetry::sendTelemetryAsync(const nlohmann::json& payload) {
         } catch (const std::exception& e) {
             Logger::debug("Telemetry send failed: {}", e.what());
         }
-    }).detach();
+    }, "telemetry-send");
 }

@@ -2,10 +2,10 @@
 #include <lib/json/json.hpp>
 
 #include <filesystem>
-#include <thread>
 
 #include <Utils/VersionUtils.hpp>
 #include <Utils/WinrtUtils.hpp>
+#include <Utils/Concurrency/TaskRuntime.hpp>
 
 #include "Command/CommandManager.hpp"
 
@@ -85,7 +85,7 @@ std::vector<std::string> Client::getPlayersVector(const nlohmann::json& data) {
 }
 
 
-bool Client::disable = false;
+std::atomic_bool Client::disable = false;
 bool Client::init = false;
 
 winrt::event_token activationToken;
@@ -215,7 +215,7 @@ void Client::initialize() {
     };
 
 
-	std::thread updateThread([]() {
+	TaskRuntime::scheduleDetached([]() {
 		std::string playersList;
 		std::string filePath = Utils::getRoamingPath() + "\\Flarial\\playerscache.txt";
 		std::ifstream file(filePath);
@@ -241,9 +241,7 @@ void Client::initialize() {
 
 		APIUtils::onlineUsers = APIUtils::ListToVector(playersList);
 		APIUtils::onlineUsersSet = APIUtils::onlineUsers | std::ranges::to<decltype(APIUtils::onlineUsersSet)>();
-		});
-
-	updateThread.detach();
+	}, "load-player-cache");
 
 
 
@@ -350,8 +348,7 @@ RECT currentRect = { 0 };
 RECT clientRect = { 0 };
 RECT previousRect = { 0 };
 bool InHudScreen = false;
-
-bool toes = false;
+std::atomic_bool centerCursorWatcherRunning = false;
 
 void Client::PerformPostLegacySetup() {
 	if (Client::hasLegacySettings) {
@@ -393,22 +390,28 @@ void Client::PerformPostLegacySetup() {
 void Client::centerCursor() {
 	if (Client::disable) return;
 	if (hWnd != nullptr && Client::settings.getSettingByName<bool>("centreCursor")->value) {
-		if (!toes) {
-			toes = true;
-			std::thread wow([&]() {
-				while (!Client::disable && Client::settings.getSettingByName<bool>("centreCursor")->value) {
+		bool expected = false;
+		if (centerCursorWatcherRunning.compare_exchange_strong(expected, true)) {
+			TaskRuntime::scheduleLoop(
+				[]() -> bool {
+					if (Client::disable || !Client::settings.getSettingByName<bool>("centreCursor")->value) {
+						centerCursorWatcherRunning = false;
+						return false;
+					}
+
 					GetWindowRect(hWnd, &currentRect);
 					GetClientRect(hWnd, &clientRect);
 
 					if (memcmp(&currentRect, &previousRect, sizeof(RECT)) != 0) {
 						previousRect = currentRect;
 					}
-					Sleep(1000);
-				}
-				if (Client::disable && !Client::settings.getSettingByName<bool>("centreCursor")->value) toes = false;
-				});
 
-			wow.detach();
+					return true;
+				},
+				std::chrono::seconds(1),
+				std::chrono::milliseconds::zero(),
+				"center-cursor-watch"
+			);
 		}
 
 
@@ -436,8 +439,8 @@ std::string Client::activeConfig;
 bool Client::hasLegacySettings = false;
 bool Client::softLoadLegacy = false;
 bool Client::privateInit = false;
-bool Client::savingSettings = false;
-bool Client::savingPrivate = false;
+std::atomic_bool Client::savingSettings = false;
+std::atomic_bool Client::savingPrivate = false;
 nlohmann::json Client::globalSettings;
 std::string Client::version;
 HMODULE Client::currentModule = nullptr;
@@ -503,8 +506,12 @@ void Client::LoadLegacySettings() {
 }
 
 void Client::SavePrivate() {
-	if (savingPrivate) return;
-	else savingPrivate = true;
+	if (savingPrivate.exchange(true)) return;
+
+	struct ScopedFlagReset {
+		std::atomic_bool& flag;
+		~ScopedFlagReset() { flag = false; }
+	} resetSavingPrivate{savingPrivate};
 
 	try {
 		Logger::custom(fg(fmt::color::dark_magenta), "Config", "Saving PRIVATE");
@@ -529,11 +536,9 @@ void Client::SavePrivate() {
 		pFile.close();
 
 		Logger::custom(fg(fmt::color::dark_magenta), "Config", "Saved PRIVATE");
-		savingPrivate = false;
 	}
 	catch (const std::exception& e) {
 		LOG_ERROR("An error occurred while trying to save settings: {}", e.what());
-		savingPrivate = false;
 	}
 }
 
@@ -562,8 +567,12 @@ void Client::LoadPrivate() {
 }
 
 void Client::SaveSettings() {
-	if (savingSettings) return;
-	else savingSettings = true;
+	if (savingSettings.exchange(true)) return;
+
+	struct ScopedFlagReset {
+		std::atomic_bool& flag;
+		~ScopedFlagReset() { flag = false; }
+	} resetSavingSettings{savingSettings};
 
 	if (path.empty()) path = Utils::getConfigsPath() + "\\" + settings.getSettingByName<std::string>("currentConfig")->value;
 	Logger::custom(fg(fmt::color::dark_magenta), "Config", "Saving {}", Client::settings.getSettingByName<std::string>("currentConfig")->value);
@@ -591,7 +600,6 @@ void Client::SaveSettings() {
 		std::ofstream tempFile(tempPath, std::ofstream::out | std::ofstream::trunc);
 		if (!tempFile.is_open()) {
 			LOG_ERROR("Could not open temporary config file for writing");
-			savingSettings = false;
 			return;
 		}
 		
@@ -603,16 +611,13 @@ void Client::SaveSettings() {
 		if (ec) {
 			LOG_ERROR("Failed to rename temporary config file: {}", ec.message());
 			std::filesystem::remove(tempPath, ec);
-			savingSettings = false;
 			return;
 		}
 
 		Logger::custom(fg(fmt::color::dark_magenta), "Config", "Saved {}", Client::settings.getSettingByName<std::string>("currentConfig")->value);
-		savingSettings = false;
 	}
 	catch (const std::exception& e) {
 		LOG_ERROR("An error occurred while trying to save settings: {}", e.what());
-		savingSettings = false;
 	}
 
 	ScriptManager::saveSettings();

@@ -1,6 +1,7 @@
 #include <format>
 #include "../../../../Events/Input/KeyEvent.hpp"
 #include "../../../../../Utils/Logger/Logger.hpp"
+#include "../../../../../Utils/Concurrency/TaskRuntime.hpp"
 #include "../../../../Client.hpp"
 #include <windows.h>
 #include <unknwn.h>
@@ -123,7 +124,7 @@ public:
                                 FlarialGUI::TextCursorPosition += 1;
                             }
 
-                            std::thread leftThread([&box]() {
+                            TaskRuntime::scheduleDetached([&box]() {
                                 bool firstTime = true;
                                 while (box.isMovingLeft) {
                                     if (!firstTime && FlarialGUI::TextCursorPosition < (int)box.text.length()) {
@@ -154,9 +155,7 @@ public:
                                         std::this_thread::sleep_for(std::chrono::milliseconds(50));
                                     }
                                 }
-                            });
-
-                            leftThread.detach();
+                            }, "textbox-move-left");
                             box.isMovingLeft = true;
                         }
 
@@ -181,7 +180,7 @@ public:
                                 }
                             }
 
-                            std::thread rightThread([&box]() {
+                            TaskRuntime::scheduleDetached([&box]() {
                                 bool firstTime = true;
                                 while (box.isMovingRight) {
                                     if (!firstTime) {
@@ -212,9 +211,7 @@ public:
                                         std::this_thread::sleep_for(std::chrono::milliseconds(50));
                                     }
                                 }
-                            });
-
-                            rightThread.detach();
+                            }, "textbox-move-right");
                             box.isMovingRight = true;
                         } else if (event.getKey() == VK_HOME) {
                             FlarialGUI::TextCursorPosition = (int)box.text.length();
@@ -248,7 +245,7 @@ public:
                                 }
                             }
 
-                            std::thread deleteThread([&box]() {
+                            TaskRuntime::scheduleDetached([&box]() {
                                 bool firstTime = true;
                                 while (box.isForwardDeleting) {
                                     if (!box.text.empty() && !firstTime) {
@@ -285,15 +282,13 @@ public:
                                         std::this_thread::sleep_for(std::chrono::milliseconds(100));
                                     }
                                 }
-                            });
-
-                            deleteThread.detach();
+                            }, "textbox-delete-forward");
                             box.isForwardDeleting = true;
                         } else if (event.getKey() == VK_BACK) {
 
                             if (event.getAction() == ActionType::Pressed) {
 
-                                std::thread t([&box]() {
+                                TaskRuntime::scheduleDetached([&box]() {
 
                                     bool firstTime = true;
                                     while (box.isDeleting) {
@@ -331,9 +326,7 @@ public:
                                             std::this_thread::sleep_for(std::chrono::milliseconds(100));
                                         }
                                     }
-                                });
-
-                                t.detach();
+                                }, "textbox-delete-backward");
 
                                 box.isDeleting = true;
 

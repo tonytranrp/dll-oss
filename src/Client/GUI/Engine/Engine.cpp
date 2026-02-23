@@ -24,9 +24,11 @@
 #include <vector>
 #include <fstream>
 #include <algorithm>
+#include <mutex>
 
 #include "../../Module/Modules/ClickGUI/ClickGUI.hpp"
 #include "imgui/imgui_freetype.h"
+#include "Utils/Concurrency/TaskRuntime.hpp"
 //#include <misc/freetype/imgui_freetype.h>
 
 #include "../../Hook/Hooks/Render/DirectX/DXGI/SwapchainHook.hpp"
@@ -39,6 +41,7 @@ std::map<int, ID2D1Bitmap*> ImagesClass::images;
 std::map<int, ID3D11ShaderResourceView*> ImagesClass::ImguiDX11Images;
 std::map<int, ImTextureID> ImagesClass::ImguiDX12Images;
 std::map<int, ID3D12Resource*> ImagesClass::ImguiDX12Textures;
+std::mutex gFontMemoryToLoadMutex;
 
 // TODO: release it !!!
 ID2D1Factory* FlarialGUI::factory;
@@ -1090,7 +1093,7 @@ std::vector<std::byte> ConvertFontDataToVector(LPVOID data, size_t size) {
 void FlarialGUI::queueFontMemoryLoad(std::wstring filepath, FontKey fontK, int ResourceID) {
 	std::string tral = WideToNarrow(filepath);
 	Logger::debug("Queueing font load for: {}, {}, {}", fontK.name, cached_to_string(fontK.weight), fontK.size);
-	std::thread([tral, filepath, fontK, ResourceID]() {
+	TaskRuntime::scheduleDetached([tral, filepath, fontK, ResourceID]() {
 		if (ResourceID > 0) {
 			LPVOID pFontData = NULL;
 			DWORD dwFontSize = 0;
@@ -1109,25 +1112,31 @@ void FlarialGUI::queueFontMemoryLoad(std::wstring filepath, FontKey fontK, int R
 
 			dwFontSize = SizeofResource(Client::currentModule, hRes);
 
-			FontMemoryToLoad.push_back(std::pair(ConvertFontDataToVector(pFontData, dwFontSize), fontK));
+			std::lock_guard<std::mutex> lock(gFontMemoryToLoadMutex);
+			FontMemoryToLoad.emplace_back(ConvertFontDataToVector(pFontData, dwFontSize), fontK);
 		}
 		std::ifstream fontFile(tral, std::ios::binary);
 		if (fontFile.is_open()) {
 			Logger::debug("Path {}", tral);
 			std::vector<std::byte> fontData = Memory::readFile(filepath);
 			fontFile.close();
-			FontMemoryToLoad.push_back(std::pair(fontData, fontK));
+			std::lock_guard<std::mutex> lock(gFontMemoryToLoadMutex);
+			FontMemoryToLoad.emplace_back(std::move(fontData), fontK);
 		}
-		}).detach();
+	}, "queue-font-load");
 }
 
 bool FlarialGUI::LoadFontFromFontFamily(FontKey fontK) {
+	std::vector<std::pair<std::vector<std::byte>, FontKey>> pendingFonts;
+	{
+		std::lock_guard<std::mutex> lock(gFontMemoryToLoadMutex);
+		pendingFonts.swap(FlarialGUI::FontMemoryToLoad);
+	}
 
-	if (!FlarialGUI::FontMemoryToLoad.empty()) {
-		for (auto it = FlarialGUI::FontMemoryToLoad.begin(); it != FlarialGUI::FontMemoryToLoad.end(); ) {
+	if (!pendingFonts.empty()) {
+		for (auto& pendingFont : pendingFonts) {
 			if (fontK.name == "Space Grotesk") fontK.name = "162";
-			auto ogit = it;
-			if (!FontMap[it->second])
+			if (!FontMap[pendingFont.second])
 			{
 
 				ImFontConfig config;
@@ -1138,23 +1147,27 @@ bool FlarialGUI::LoadFontFromFontFamily(FontKey fontK) {
 				} else config.FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
 
 				config.FontDataOwnedByAtlas = false;
-				int FontDataSize = static_cast<int>(it->first.size());
+				int FontDataSize = static_cast<int>(pendingFont.first.size());
 
 				if (FontDataSize < 100) {
 					LOG_ERROR("Error Loading Font. Font size is less than 100");
 					return false;
 				};
 				const std::vector<int> fontSizeBuckets = { 16, 32, 64, 128, 256 };
-				FontKey og = it->second;
+				FontKey og = pendingFont.second;
 				for (int rsize : fontSizeBuckets) {
-					it->second.size = rsize;
-					if (!FontMap[it->second])
-						FontMap[it->second] = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(it->first.data(), static_cast<int>(it->first.size()), it->second.size, &config, ImGui::GetIO().Fonts->GetGlyphRangesDefault());
+					pendingFont.second.size = rsize;
+					if (!FontMap[pendingFont.second])
+						FontMap[pendingFont.second] = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+							pendingFont.first.data(),
+							static_cast<int>(pendingFont.first.size()),
+							pendingFont.second.size,
+							&config,
+							ImGui::GetIO().Fonts->GetGlyphRangesDefault()
+						);
 				}
-				it->second.size = og.size;
+				pendingFont.second.size = og.size;
 			}
-
-			it = FlarialGUI::FontMemoryToLoad.erase(ogit);
 			HasAFontLoaded = true;
 		}
 	}

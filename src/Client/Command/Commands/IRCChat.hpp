@@ -5,7 +5,7 @@
 #include <ws2tcpip.h>
 #include <iostream>
 #include <string>
-#include <thread>
+#include "Utils/Concurrency/TaskRuntime.hpp"
 
 #define SERVER_IP "150.136.39.248"
 #define SERVER_PORT 5010
@@ -41,7 +41,7 @@ class IRCChat : public Command {
     WSADATA wsaData;
     SOCKET clientSocket = INVALID_SOCKET;
 
-    std::thread listener_thread;
+    TaskRuntime::TaskId listenerTaskId = 0;
 
 public:
     IRCChat() : Command("irc", "Chat With other Flarial sigmas") {
@@ -72,7 +72,12 @@ public:
             return;
         }
 
-        listener_thread =  std::thread(&IRCChat::listen_for_messages, this, clientSocket);
+        listenerTaskId = TaskRuntime::scheduleDetached(
+            [this]() {
+                listen_for_messages(clientSocket);
+            },
+            "irc-listener"
+        );
 
     }
     void execute(const std::vector<std::string>& args) override;

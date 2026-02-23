@@ -3,6 +3,7 @@
 #include "../Module.hpp"
 #include "../Misc/HiveModeCatcher/HiveModeCatcherListener.hpp"
 #include "../../../../Utils/Hive.hpp"
+#include "../../../../Utils/Concurrency/TaskRuntime.hpp"
 #include "Assets/Assets.hpp"
 #include "Events/Render/RenderEvent.hpp"
 
@@ -13,12 +14,10 @@ private:
 	std::vector<std::string> queueList;
 	std::shared_mutex queueMutex;
 	std::condition_variable_any queueCondition;
-	std::thread fetchThread;
-	bool stopThread = false;
 	bool renderOverlay = true;
 	Vec2<float> currentPos;
 	bool shoudReset = false;
-	std::map<std::string, std::thread> playerThreads;
+	std::map<std::string, TaskRuntime::TaskId> playerThreads;
 
 	const std::unordered_map<std::string, ImU32> colorMap = {
 		{"dark_blue",   IM_COL32(38, 93, 255, 255)},

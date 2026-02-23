@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <filesystem>
+#include <atomic>
 #include <lib/json/json_fwd.hpp>
 #include <windows.h>
 
@@ -37,7 +38,7 @@ public:
 
 	static void initialize();
 
-	static bool disable;
+    static std::atomic_bool disable;
 
 	static void centerCursor();
 
@@ -45,8 +46,8 @@ public:
 	static bool hasLegacySettings;
 	static bool softLoadLegacy;
 	static bool privateInit;
-	static bool savingSettings;
-	static bool savingPrivate;
+    static std::atomic_bool savingSettings;
+    static std::atomic_bool savingPrivate;
 
 	static Settings settings;
 	static Settings legacySettings;
