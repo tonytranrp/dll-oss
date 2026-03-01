@@ -213,6 +213,16 @@ ActorRotationComponent *Actor::getActorRotationComponent() {
     return tryGet<ActorRotationComponent>(sig);
 }
 
+ActorHeadRotationComponent* Actor::getActorHeadRotationComponent() {
+    if (!VersionUtils::checkAboveOrEqual(21, 00)) return nullptr;
+    return tryGet<ActorHeadRotationComponent>();
+}
+
+MobBodyRotationComponent* Actor::getMobBodyRotationComponent() {
+    if (!VersionUtils::checkAboveOrEqual(21, 00)) return nullptr;
+    return tryGet<MobBodyRotationComponent>();
+}
+
 SynchedActorDataComponent* Actor::getSynchedActorDataComponent() {
 	static uintptr_t sig;
 

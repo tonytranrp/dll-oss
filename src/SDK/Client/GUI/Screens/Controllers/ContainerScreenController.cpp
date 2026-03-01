@@ -38,8 +38,19 @@ void ContainerScreenController::_handlePlaceAll(std::string collectionName, int3
 
 void ContainerScreenController::_handleTakeAll(std::string collectionName, int32_t slot) {
     using func = void(__fastcall*)(ContainerScreenController *, std::string, int32_t);
-    static auto handlePlaceAll = reinterpret_cast<func>(Memory::offsetFromSig(GET_SIG_ADDRESS("ContainerScreenController::_handleTakeAll"), 1));
-    return handlePlaceAll(this, collectionName, slot);
+    static func handleTakeAll = nullptr;
+
+    if (handleTakeAll == nullptr) {
+        const auto sigAddress = GET_SIG_ADDRESS("ContainerScreenController::_handleTakeAll");
+        if (sigAddress == 0) return;
+
+        const auto fnAddress = Memory::offsetFromSig(sigAddress, 1);
+        if (fnAddress == 0) return;
+
+        handleTakeAll = reinterpret_cast<func>(fnAddress);
+    }
+
+    return handleTakeAll(this, collectionName, slot);
 }
 
 void ContainerScreenController::swap(std::string srcCollectionName, int32_t srcSlot, std::string dstCollectionName, int32_t dstSlot) {

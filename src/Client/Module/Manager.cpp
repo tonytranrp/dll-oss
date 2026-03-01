@@ -75,6 +75,9 @@
 #include "Modules/ViewModel/ViewModel.hpp"
 #include "Modules/PotionHUD/PotionHUD.hpp"
 #include "Modules/FasterInventory/FasterInventory.hpp"
+#include "Modules/PacketTest/PacketTest.hpp"
+#include "Modules/PacketMine/PacketMine.hpp"
+#include "Modules/Regen/Regen.hpp"
 #include "Modules/Waypoints/Waypoints.hpp"
 #include "Modules/JavaInventoryHotkeys/JavaInventoryHotkeys.hpp"
 #include "Modules/MovableScoreboard/MovableScoreboard.hpp"
@@ -122,6 +125,7 @@
 #include "Modules/CompactChat/CompactChat.hpp"
 #include "Modules/MessageLogger/MessageLogger.hpp"
 #include "Modules/TotemCounter/TotemCounter.hpp"
+#include "Modules/AutoTotem/AutoTotem.hpp"
 #include "Modules/BetterHungerBar/BetterHungerBar.hpp"
 #include "Modules/ParticleMultiplier/ParticleMultiplier.hpp"
 #include "Modules/BowSensitivity/BowSensitivity.hpp"
@@ -241,6 +245,9 @@ void ModuleManager::initialize() {
 	addModule<ViewModel>();
 	addModule<PotionHUD>();
 	addModule<FasterInventory>();
+	addModule<PacketTest>();
+	addModule<PacketMine>();
+	addModule<Regen>();
 	//addModule<MovableHUD>();
 	addModule<MovableScoreboard>();
 	addModule<MovableTitle>();
@@ -304,6 +311,7 @@ void ModuleManager::initialize() {
 	addModule<MessageLogger>();
 	}
 	addModule<TotemCounter>();
+	addModule<AutoTotem>();
 	addModule<BetterHungerBar>();
 	addModule<ParticleMultiplier>();
 	addModule<BowSensitivity>();

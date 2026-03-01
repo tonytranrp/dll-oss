@@ -11,6 +11,8 @@
 #include "Hooks/Game/ActorBaseTick.hpp"
 #include "Hooks/Visual/getGammaHook.hpp"
 #include "Hooks/Game/GameModeAttack.hpp"
+#include "Hooks/Game/GameModeStartDestroyBlock.hpp"
+#include "Hooks/Game/GameModeStopDestroyBlock.hpp"
 #include "Hooks/Game/RaknetTick.hpp"
 #include "Hooks/Game/PacketHooks.hpp"
 #include "Hooks/Game/getViewPerspective.hpp"
@@ -35,6 +37,7 @@
 #include "Hooks/Render/HudCursorRenderer.hpp"
 #include "Hooks/Render/GeneralSettingsScreenControllerCtorHook.hpp"
 #include "Hooks/Render/TickingTextureStageRenderHook.hpp"
+#include "Hooks/Render/ActorRenderDispatcherHook.hpp"
 //#include "Hooks/Game/RenderItemGroup.hpp"
 //#include "Hooks/Game/getCurrentSwingDuration.hpp"
 #include "Hooks/Game/ItemInHandRendererRenderItem.hpp"
@@ -92,6 +95,8 @@ void HookManager::initialize() {
     addHook<RaknetTickHook>();
     addHook<SetUpAndRenderHook>();
     addHook<GameModeAttackHook>();
+    addHook<GameModeStartDestroyBlockHook>();
+    addHook<GameModeStopDestroyBlockHook>();
 
     addHook<getFovHook>();
     addHook<displayClientMessageHook>();
@@ -140,6 +145,9 @@ void HookManager::initialize() {
 
     addHook<BobHurtHook>();
     addHook<RenderLevelHook>();
+    if (VersionUtils::checkAboveOrEqual(21, 11)) {
+        addHook<ActorRenderDispatcherHook>();
+    }
     addHook<TintColorHook>();
     addHook<ActorShaderParamsHook>();
     addHook<ChatScreenControllerHook>();

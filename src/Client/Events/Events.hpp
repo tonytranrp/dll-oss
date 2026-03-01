@@ -1,6 +1,8 @@
 #include "EventManager.hpp"
 
 #include "Game/AttackEvent.hpp"
+#include "Game/StartDestroyBlockEvent.hpp"
+#include "Game/StopDestroyBlockEvent.hpp"
 #include "Game/FOVEvent.hpp"
 #include "Game/PerspectiveEvent.hpp"
 #include "Game/RaknetTickEvent.hpp"

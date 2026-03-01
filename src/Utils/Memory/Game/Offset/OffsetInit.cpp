@@ -31,6 +31,10 @@ void OffsetInit::init21110() {
     ADD_OFFSET("SwingAngle", 4);
 
     ADD_OFFSET("Player::gamemode", 0xA78);
+    ADD_OFFSET("Gamemode::startDestroyBlockVft", 1);
+    ADD_OFFSET("Gamemode::destroyBlockVft", 2);
+    ADD_OFFSET("Gamemode::continueDestroyBlockVft", 3);
+    ADD_OFFSET("Gamemode::stopDestroyBlockVft", 4);
 
     // Keep block-id/name path explicit for 1.21.11X so deep scanners don't depend on older init chains.
     ADD_OFFSET("Block::blockLegacy", 0x78);
@@ -325,6 +329,7 @@ void OffsetInit::init2100() {
     Logger::custom(fg(fmt::color::golden_rod), "Offsets", "Loading offsets for 1.21.0X");
 
     ADD_OFFSET("Inventory::getItem", 7);
+    ADD_OFFSET("Inventory::setItem", 13);
 
     ADD_OFFSET("Actor::hurtTime", 0x20C);
     ADD_OFFSET("Actor::level", 0x250);

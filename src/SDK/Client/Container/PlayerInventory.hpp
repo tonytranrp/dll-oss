@@ -10,6 +10,10 @@ public:
         return hat::member_at<int>(this, GET_OFFSET("PlayerInventory::SelectedSlot"));
     }
 
+    void setSelectedSlot(int slot) {
+        hat::member_at<int>(this, GET_OFFSET("PlayerInventory::SelectedSlot")) = slot;
+    }
+
     Inventory *getInventory() {
         return hat::member_at<Inventory*>(this, GET_OFFSET("PlayerInventory::inventory"));
     }
